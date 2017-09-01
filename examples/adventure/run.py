@@ -1,3 +1,4 @@
+import sys
 import webbrowser
 from examples.auth import authorization
 import os
@@ -101,7 +102,6 @@ def transform_column_data(revision, output_schema):
         use_output_schema(revision, new_output_schema)()
     return run
 
-
 def change_column_metadata(revision, output_schema):
     def run():
         field_name = prompt('Enter the field name of the column to change')
@@ -180,33 +180,62 @@ def apply_revision(revision, output_schema):
         (ok, job) = revision.apply(output_schema = output_schema)
         assert ok, job
 
-        def progress(job):
-            def s(l):
-                if l['details']:
-                    return l['stage'] + ' ' + str(l['details'])
-                return l['stage']
-            print(
-                'I have done these things: ' + ', '.join(reversed([s(l) for l in job.attributes['log']]))
-            )
+        on_job(revision, job)
 
-        (ok, job) = job.wait_for_finish(progress = progress)
-        assert ok, job
+    return run
 
-        (ok, view) = socrata.views.lookup(revision.attributes['fourfour'])
-        assert ok, view
-
-        def print_url():
-            print(view.ui_url())
-
-        interaction(
-            """
-            You have reached the end of your adventure, you can:
-            """,
-            [
-                ('Open the view in a browser', browse(view)),
-                ('View the view url', print_url)
-            ]
+def on_job(revision, job):
+    def progress(job):
+        def s(l):
+            if l['details']:
+                return l['stage'] + ' ' + str(l['details'])
+            return l['stage']
+        print(
+            'I have done these things: ' + ', '.join(reversed([s(l) for l in job.attributes['log']]))
         )
+
+    (ok, job) = job.wait_for_finish(progress = progress)
+    assert ok, job
+
+    (ok, view) = socrata.views.lookup(revision.attributes['fourfour'])
+    assert ok, view
+
+    def print_url():
+        print(view.ui_url())
+
+    interaction(
+        """
+        You have reached the end of your adventure, you can:
+        """,
+        [
+            ('Open the view in a browser', browse(view)),
+            ('View the view url', print_url)
+        ]
+    )
+
+def gen_config(revision, output_schema):
+    def run():
+        name = prompt('Enter a name for this configuration')
+        action = prompt('Enter an action to take when this config is used, either "update" or "replace"')
+
+        (ok, config) = output_schema.build_config(name, action)
+        if not ok:
+            print("Creating the config failed!", config)
+            return
+        else:
+            print(dedent("""
+            Configuration created!
+
+            To {action} your view {fourfour} using config {name},
+            start the adventure game over and choose the "Use Configuration"
+            path
+            """.format(
+                fourfour = revision.attributes['fourfour'],
+                action = action,
+                name = name
+            )))
+
+            sys.exit(0)
 
     return run
 
@@ -235,22 +264,27 @@ def use_output_schema(revision, output_schema):
                 ('View the output schema', print_output_schema(output_schema)),
                 ('Do a transform: change the column data, metadata, or add and drop columns', transform_output_schema(revision, output_schema)),
                 ('Apply this data to the view', apply_revision(revision, output_schema)),
+                ('Save this OutputSchema as a configuration, for automation in the future', gen_config(revision, output_schema)),
                 ('Open the revision in a browser, scroll down and click the "Preview Data" button to see the OutputSchema', browse(revision))
             ]
         )
     return run
 
+def file_picker():
+    files = 'files'
+    examples = [join(files, f) for f in listdir(files) if isfile(join(files, f))]
+
+    print("Examples:")
+    for e in examples:
+        print(e)
+
+    return prompt('Enter the file path')
+
+
 def upload_csv(revision):
     def run():
         def get_file():
-            files = 'files'
-            examples = [join(files, f) for f in listdir(files) if isfile(join(files, f))]
-
-            print("Examples:")
-            for e in examples:
-                print(e)
-
-            path = prompt('Enter the file path')
+            path = file_picker()
 
             if not os.path.exists(path):
                 print("That path doesn't exist!")
@@ -314,6 +348,36 @@ def create():
         ]
     )
 
+def update_using_config():
+    name = prompt('Enter the configuration name')
+    fourfour = prompt('Enter the view id (four by four)')
+
+    (ok, view) = socrata.views.lookup(fourfour)
+    if not ok:
+        print("Failed to lookup that view", view)
+        return update_using_config()
+
+    path = file_picker()
+    with open(path, 'rb') as file:
+        (revision, job) = socrata.using_config(name, view).csv(file)
+        on_job(revision, job)
+
+def list_configs():
+    (ok, configs) = socrata.configs.list()
+    if not ok:
+        print("Failed to lookup configs", configs)
+        return
+
+    for config in configs:
+        print(config.attributes['name'], 'action =', config.attributes['data_action'])
+        print('\n  '.join([
+            'field_name = ' + c['field_name'] + ', expr = ' + c['transform_expr']
+            for c in config.attributes['columns']
+        ]))
+        print('-' * 80)
+
+
+
 
 setup_logging()
 interaction(
@@ -324,6 +388,8 @@ interaction(
     and a terminal. You can create things in Socrata from here.
     """),
     [
-        ('Create a new dataset and revision', create)
+        ('Create a new dataset and revision', create),
+        ('Update a dataset using a configuration', update_using_config),
+        ('List configurations', list_configs)
     ]
 )
