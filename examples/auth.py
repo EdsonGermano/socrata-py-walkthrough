@@ -2,8 +2,7 @@ import os
 from socrata.authorization import Authorization
 
 authorization = Authorization(
-  'localhost',
-  os.environ['SOCRATA_LOCAL_USER'],
-  os.environ['SOCRATA_LOCAL_PASS']
+  'chris.test-socrata.com',
+  os.environ['SOCRATA_USERNAME'],
+  os.environ['SOCRATA_PASSWORD']
 )
-authorization.live_dangerously()
