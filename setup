@@ -1,0 +1,3 @@
+#!/bin/bash
+virtualenv -p python3 venv
+venv/bin/pip3 install --upgrade --force-reinstall -r requirements.txt

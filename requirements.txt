@@ -1,0 +1,4 @@
+socrata-py==0.4.0
+pandas
+prettytable
+termcolor
