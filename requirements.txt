@@ -1,4 +1,4 @@
-socrata-py==0.4.0
+socrata-py==0.4.1
 pandas
 prettytable
 termcolor
